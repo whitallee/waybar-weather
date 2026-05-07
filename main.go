@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // --- wttr.in response types ---
@@ -83,26 +84,34 @@ func main() {
 
 	url := fmt.Sprintf("https://wttr.in/%s?format=j1", location)
 
-	resp, err := http.Get(url)
-	if err != nil {
-		printError("network error")
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		printError("bad response")
-		return
-	}
-
+	const maxAttempts = 5
 	var wttr WttrResponse
-	if err := json.NewDecoder(resp.Body).Decode(&wttr); err != nil {
-		printError("parse error")
-		return
+	var fetchErr string
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		resp, err := http.Get(url)
+		if err != nil {
+			fetchErr = "network error"
+		} else if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			fetchErr = "bad response"
+		} else if err := json.NewDecoder(resp.Body).Decode(&wttr); err != nil {
+			resp.Body.Close()
+			fetchErr = "parse error"
+		} else {
+			resp.Body.Close()
+			if len(wttr.CurrentCondition) == 0 {
+				fetchErr = "no data"
+			} else {
+				fetchErr = ""
+				break
+			}
+		}
+		if attempt < maxAttempts {
+			time.Sleep(1 * time.Second)
+		}
 	}
-
-	if len(wttr.CurrentCondition) == 0 {
-		printError("no data")
+	if fetchErr != "" {
+		printError(fetchErr)
 		return
 	}
 
